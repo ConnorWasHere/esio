@@ -13,7 +13,6 @@ import (
 	errors "github.com/go-openapi/errors"
 	strftime "github.com/hhkbp2/go-strftime"
 	elastic "gopkg.in/olivere/elastic.v2"
-
 	"github.com/danisla/esio/models"
 )
 
@@ -57,7 +56,28 @@ type SnapshotShards struct {
 	Failed     int `json:"failed"`
 	Successful int `json:"successful"`
 }
+type ElasticQuery struct {
+	TimedOut bool `json:"timed_out"`
+	HitObj HitObject `json:"hits"`
+}
 
+type HitObject struct {
+	Total int `json:"total"`
+	Hits []HitVal `json:"hits"`
+}
+type HitVal struct {
+	TimeStamp int64 `json:"_timestamp"`
+	ID string `json:"_id"`
+	Source SnapNameCached `json:"_source"`
+}
+type SnapNameCached struct {
+	SnapName string `json:"snapshot_name"`
+}
+type AllocationVal struct {
+	AvailableSpace string `json:"disk.avail"`
+	TotalSpace string `json:"disk.total"`
+	PercentUsed string `json:"disk.percent"`
+}
 var restoreQueue *Queue
 var deleteQueue *Queue
 
@@ -155,7 +175,7 @@ func validateSnapshotIndex(repoPattern string) (bool, error) {
 	target := path.Base(repoPattern)
 	endpoint := fmt.Sprintf("%s/_snapshot/%s", myFlags.EsHost, repo)
 
-	log.Println("Checking snapshot: " + endpoint + " for index: " + target)
+	log.Println("Checking snapshot da fq: " + endpoint + " for index: " + target)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -224,6 +244,32 @@ func restoreSnapshot(snap string) (*SnapshotRestore, error) {
 	return &snapRestore.Snapshot, nil
 }
 
+func getOldestSnap() ([]string, error) {
+	endpoint := fmt.Sprintf("%s/lrr_cache/_search?_timestamp:asc&size:1000", "http://localhost:9200")
+	SnapArray := make([]string, 0)
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return SnapArray, errors.New(500, fmt.Sprintf("Error building http request: %s", err))
+	}
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return SnapArray, errors.New(500, fmt.Sprintf("Error making client request: %s", err))
+	}
+	defer resp.Body.Close()
+	var queryResp ElasticQuery
+	if err := json.NewDecoder(resp.Body).Decode(&queryResp); err != nil {
+		return SnapArray, errors.New(500, fmt.Sprintf("Error decoding ES JSON response for url: %s", endpoint))
+	}
+	fmt.Println(len(queryResp.HitObj.Hits))
+	for i := 0; i < len(queryResp.HitObj.Hits); i++ {
+		SnapArray = append(SnapArray, queryResp.HitObj.Hits[i].Source.SnapName)
+	}
+	return SnapArray, nil
+}
+
 func getIndices() ([]CatIndex, error) {
 	// var cat CatIndices
 	cat := make([]CatIndex,0)
@@ -251,6 +297,29 @@ func getIndices() ([]CatIndex, error) {
 	}
 
 	return cat, nil
+}
+
+func getAllocation() ([]AllocationVal, error) {
+	allocation := make([]AllocationVal,0)
+	endpoint := fmt.Sprintf("%s/_cat/allocation?format=json", "http://localhost:9200")
+
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return allocation, errors.New(500, fmt.Sprintf("Error building http request: %s", err))
+	}
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return allocation, errors.New(500, fmt.Sprintf("Error making client request: %s", err))
+	}
+	defer resp.Body.Close()
+
+	if err := json.NewDecoder(resp.Body).Decode(&allocation); err != nil {
+		return allocation, errors.New(500, fmt.Sprintf("Error decoding ES JSON response for url: %s", endpoint))
+	}
+	return allocation, nil
 }
 
 // Takes a list of indices and matches it against the found indices
@@ -323,6 +392,7 @@ func makeIndexStatus(indices []string) (models.IndiceStatus, error) {
 
 func deleteIndices(indices []string) (bool, error) {
 	// Create the IndexStatus data structure
+	log.Println(indices)
 	indiceStatus, err := makeIndexStatus(indices)
 	if err != nil {
 		return false, errors.New(500, fmt.Sprintf("Error comparing online indices with snapshots list: %s", err))

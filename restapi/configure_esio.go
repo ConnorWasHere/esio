@@ -19,6 +19,7 @@ import (
 	"github.com/danisla/esio/restapi/operations"
 	"github.com/danisla/esio/restapi/operations/health"
 	"github.com/danisla/esio/restapi/operations/index"
+
 )
 
 // This file is safe to edit. Once it exists it will not be overwritten
@@ -195,6 +196,18 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 			return index.NewPostStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 		}
 
+		//spaceNeeded := len(indices) * 25
+		alloc, err := getAllocation()
+
+		for i := 0; i < len(alloc); i++ {
+			log.Println(alloc[i].AvailableSpace)
+		}
+
+		oldSnaps, err := getOldestSnap()
+		for i := 0; i < len(oldSnaps); i++ {
+			log.Println(oldSnaps[i])
+		}
+
 		// Iterate through list and validate each index.
 		var allPass = true
 		for _, i := range indices {
@@ -253,7 +266,6 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 
 	api.IndexDeleteStartEndHandler = index.DeleteStartEndHandlerFunc(func(params index.DeleteStartEndParams) middleware.Responder {
 		var msg = ""
-
 		start, end, err := parseTimeRange(params.Start, params.End)
 		if err != nil {
 			msg := fmt.Sprintf("%s", err)
@@ -278,7 +290,7 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 			msg = fmt.Sprintf("Could not make index range: %s", err)
 			return index.NewDeleteStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 		}
-
+		log.Println(indices)
 		// Not allowed to delete restoring indices
 		for _, indice := range indices {
 			if restoreQueue.Contains(indice) {
