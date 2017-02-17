@@ -15,15 +15,16 @@ paths:
     get:
       tags:
         - index
+      description: Check if indices within start to end time range are currently available to query
       parameters:
         - name: start
-          description: UTC start time, unix timestamp
+          description: UTC start time, unix timestamp in seconds
           in: path
           required: true
           type: integer
           format: int64
         - name: end
-          description: UTC end time, unix timestamp
+          description: UTC end time, unix timestamp in seconds
           in: path
           required: true
           type: integer
@@ -42,7 +43,7 @@ paths:
           schema:
             $ref: "#/definitions/indice_status"
         206:
-          description: Zero or more of the indices in the [start,end] range are available and ready.
+          description: One or more of the indices in the [start,end] range are available and ready.
           schema:
             $ref: "#/definitions/indice_status"
         404:
@@ -64,15 +65,16 @@ paths:
     post:
       tags:
         - index
+      description: Restore indices within start and end time range
       parameters:
         - name: start
-          description: start time, unix timestamp
+          description: start time, unix timestamp in seconds
           in: path
           required: true
           type: integer
           format: int64
         - name: end
-          description: end time, unix timestamp
+          description: end time, unix timestamp in seconds
           in: path
           required: true
           type: integer
@@ -95,7 +97,7 @@ paths:
           schema:
             $ref: "#/definitions/indice_status"
         206:
-          description: Zero or more of the indices in the [start,end] range are available and ready.
+          description: One or more of the indices in the [start,end] range are available and ready.
           schema:
             $ref: "#/definitions/indice_status"
         416:
@@ -103,7 +105,7 @@ paths:
           schema:
             $ref: "#/definitions/error"
         400:
-          description: invalid time range provided
+          description: invalid time range provided or there is not enough room in the cluster to restore
           schema:
             $ref: "#/definitions/error"
         default:
@@ -114,15 +116,16 @@ paths:
     delete:
       tags:
         - index
+      description: Delete indices within start and end time range
       parameters:
         - name: start
-          description: start time, unix timestamp
+          description: start time, unix timestamp in seconds
           in: path
           required: true
           type: integer
           format: int64
         - name: end
-          description: end time, unix timestamp
+          description: end time, unix timestamp in seconds
           in: path
           required: true
           type: integer
@@ -178,6 +181,7 @@ definitions:
       - message
     properties:
       message:
+        description: Reason for query failure
         type: string
         minLength: 1
 

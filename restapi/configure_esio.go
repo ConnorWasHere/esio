@@ -196,18 +196,6 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 			return index.NewPostStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 		}
 
-		//spaceNeeded := len(indices) * 25
-		alloc, err := getAllocation()
-
-		for i := 0; i < len(alloc); i++ {
-			log.Println(alloc[i].AvailableSpace)
-		}
-
-		oldSnaps, err := getOldestSnap()
-		for i := 0; i < len(oldSnaps); i++ {
-			log.Println(oldSnaps[i])
-		}
-
 		// Iterate through list and validate each index.
 		var allPass = true
 		for _, i := range indices {
