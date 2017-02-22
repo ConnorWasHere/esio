@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-
+	"strconv"
 	errors "github.com/go-openapi/errors"
 	runtime "github.com/go-openapi/runtime"
 	middleware "github.com/go-openapi/runtime/middleware"
@@ -195,7 +195,6 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 			msg = fmt.Sprintf("Could not make index range: %s", err)
 			return index.NewPostStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 		}
-
 		// Iterate through list and validate each index.
 		var allPass = true
 		for _, i := range indices {
@@ -217,6 +216,12 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 		// See if all requested indices are Ready
 		var allReady = true
 		var restoreStarted = false
+		spaceLeft, err := GetAllocation()
+	  	if spaceLeft > 50 || err != nil {
+	  		go DeleteOldSnap(indices)
+	  		msg := fmt.Sprintf("Your Cluster is at %s", strconv.Itoa(spaceLeft))
+	  		return index.NewPostStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
+	  	}
 		for _, indice := range indices {
 
 			// If index is not ready and is pending, then start restoring it.
@@ -278,7 +283,6 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 			msg = fmt.Sprintf("Could not make index range: %s", err)
 			return index.NewDeleteStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 		}
-		log.Println(indices)
 		// Not allowed to delete restoring indices
 		for _, indice := range indices {
 			if restoreQueue.Contains(indice) {

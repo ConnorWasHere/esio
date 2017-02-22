@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"strconv"
 
 	errors "github.com/go-openapi/errors"
 	strftime "github.com/hhkbp2/go-strftime"
@@ -124,7 +125,18 @@ func initQueues() {
 				index := node.Value
 
 				time.Sleep(1000 * time.Millisecond)
-
+				toDelete := fmt.Sprintf("%s/lrr_cache/restored/%s", myFlags.EsHost, strings.Replace(index, "/", "@", -1))
+				log.Println(toDelete)
+				req, err := http.NewRequest("DELETE" ,toDelete, nil)
+				if err != nil {
+					log.Println(err)
+				} 
+				clientHttp := &http.Client{}
+				resp, err := clientHttp.Do(req)
+			    if err != nil {
+			        log.Fatalln(err)
+			    }
+			    log.Println(resp)
 				client, err := elastic.NewClient(
 					elastic.SetURL(myFlags.EsHost),
 					elastic.SetHealthcheck(false),
@@ -220,54 +232,90 @@ func validateSnapshotIndex(repoPattern string) (bool, error) {
 func restoreSnapshot(snap string) (*SnapshotRestore, error) {
 	repo := path.Dir(snap)
 	indices := path.Base(snap)
-
-	log.Println(fmt.Sprintf("Restoring Snapshot from repo: %s with indices: %s", repo, indices))
-
 	endpoint := fmt.Sprintf("%s/_snapshot/%s/_restore?wait_for_completion=true", myFlags.EsHost, repo)
 
 	data := fmt.Sprintf(`{"indices":"%s"}`,indices)
-  buf := strings.NewReader(data)
+  	buf := strings.NewReader(data)
+ 	log.Println(fmt.Sprintf("Restoring Snapshot from repo: %s with indices: %s", repo, indices))
 	resp, err := http.Post(endpoint, "application/json", buf)
 	if err != nil {
 		return nil, errors.New(500, fmt.Sprintf("HTTP Request error on POST %s", endpoint))
 	}
-
 	defer resp.Body.Close()
-
 	var snapRestore SnapshotRestoreResponse
-
 	if err := json.NewDecoder(resp.Body).Decode(&snapRestore); err != nil {
 		// TODO: need to test this
 		return &snapRestore.Snapshot, errors.New(500, fmt.Sprintf("Error decoding ES JSON response for url: %s", endpoint))
 	}
-
+	snapIndex := strings.Replace(snap, "/", "@", -1)
+	snapIndexData := fmt.Sprintf(`{"snapshot_name":"%s"}`, snap)
+	buf2 := strings.NewReader(snapIndexData)
+	cacheUrl := fmt.Sprintf("%s/lrr_cache/restored/%s", myFlags.EsHost, snapIndex)
+	resp2, err2 := http.Post(cacheUrl, "application/json", buf2)
+	if err2 != nil {
+		log.Println("ERROR IN POST TO CACHE")
+	}
+	log.Println(resp2)
 	return &snapRestore.Snapshot, nil
 }
 
-func getOldestSnap() ([]string, error) {
-	endpoint := fmt.Sprintf("%s/lrr_cache/_search?_timestamp:asc&size:1000", "http://localhost:9200")
-	SnapArray := make([]string, 0)
+func DeleteOldSnap(indices []string) {
+	utc, _ := time.LoadLocation("UTC")
+	endpoint := fmt.Sprintf("%s/lrr_cache/_search?_timestamp:asc&size:1000", myFlags.EsHost)
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
-		return SnapArray, errors.New(500, fmt.Sprintf("Error building http request: %s", err))
+		log.Println(fmt.Sprintf("Error building http request: %s", err))
+		return
 	}
 
 	client := &http.Client{}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return SnapArray, errors.New(500, fmt.Sprintf("Error making client request: %s", err))
+		log.Println(fmt.Sprintf("Error making client request: %s", err))
+		return
 	}
 	defer resp.Body.Close()
 	var queryResp ElasticQuery
 	if err := json.NewDecoder(resp.Body).Decode(&queryResp); err != nil {
-		return SnapArray, errors.New(500, fmt.Sprintf("Error decoding ES JSON response for url: %s", endpoint))
+		log.Println(fmt.Sprintf("Error decoding ES JSON response for url: %s", endpoint))
+		return
 	}
-	fmt.Println(len(queryResp.HitObj.Hits))
+	currentTime := time.Now()
+	currentTime = currentTime.In(utc).Add(-1 * time.Minute)
+	indexArray := make([]string,0)
 	for i := 0; i < len(queryResp.HitObj.Hits); i++ {
-		SnapArray = append(SnapArray, queryResp.HitObj.Hits[i].Source.SnapName)
+		log.Println(queryResp.HitObj.Hits[i].Source.SnapName)
+		tstamp := time.Unix(queryResp.HitObj.Hits[i].TimeStamp/1000, 0).In(utc)
+		if tstamp.Unix() < currentTime.Unix() {
+			if restoreQueue.Contains(queryResp.HitObj.Hits[i].Source.SnapName)  || stringInSlice(queryResp.HitObj.Hits[i].Source.SnapName, indices) {
+				log.Println("CANNOT DELETE IN RESTORE QUEUE")
+			} else {
+				indexArray = append(indexArray, queryResp.HitObj.Hits[i].Source.SnapName)
+			}
+		}
 	}
-	return SnapArray, nil
+	deleteActive, err := deleteIndices(indexArray)
+	if err != nil {
+		log.Println("ERROR DELETEING INDEX")
+	}
+	log.Println(deleteActive)
+	// Create the IndexStatus data structure
+	indiceStatus, err := makeIndexStatus(indexArray)
+	if err != nil {
+		log.Println("ERROR MAKING INDEX STATUS")
+	}
+	log.Println(indiceStatus)
+	return
+}
+
+func stringInSlice(a string, list []string) bool {
+    for _, b := range list {
+        if b == a {
+            return true
+        }
+    }
+    return false
 }
 
 func getIndices() ([]CatIndex, error) {
@@ -299,27 +347,36 @@ func getIndices() ([]CatIndex, error) {
 	return cat, nil
 }
 
-func getAllocation() ([]AllocationVal, error) {
+func GetAllocation() (int, error) {
 	allocation := make([]AllocationVal,0)
-	endpoint := fmt.Sprintf("%s/_cat/allocation?format=json", "http://localhost:9200")
+	endpoint := fmt.Sprintf("%s/_cat/allocation?format=json", myFlags.EsHost)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
-		return allocation, errors.New(500, fmt.Sprintf("Error building http request: %s", err))
+		return 91, errors.New(500, fmt.Sprintf("Error building http request: %s", err))
 	}
 
 	client := &http.Client{}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return allocation, errors.New(500, fmt.Sprintf("Error making client request: %s", err))
+		return 91, errors.New(500, fmt.Sprintf("Error making client request: %s", err))
 	}
 	defer resp.Body.Close()
 
 	if err := json.NewDecoder(resp.Body).Decode(&allocation); err != nil {
-		return allocation, errors.New(500, fmt.Sprintf("Error decoding ES JSON response for url: %s", endpoint))
+		return 91, errors.New(500, fmt.Sprintf("Error decoding ES JSON response for url: %s", endpoint))
 	}
-	return allocation, nil
+	returnNum := 0
+	for i := 0; i < len(allocation); i++ {
+		percents, err := strconv.Atoi(allocation[i].PercentUsed)
+		if err == nil{
+			if percents > returnNum{
+				returnNum = percents
+			}
+		}
+	}
+	return returnNum, nil
 }
 
 // Takes a list of indices and matches it against the found indices
@@ -333,7 +390,6 @@ func makeIndexStatus(indices []string) (models.IndiceStatus, error) {
 	}
 
 	var found = false
-
 	// Find all indices that are ready (open and green or yellow) or restoring (open and red)
 	for _, onlineIndice := range onlineIndices {
 
@@ -366,7 +422,6 @@ func makeIndexStatus(indices []string) (models.IndiceStatus, error) {
 
 	// Find all indices that are pending (not found in onlineIndices)
 	allOnlineIndices := concat(status.Ready, status.Restoring)
-
 	for _, indice := range indices {
 		// Verify index is not in the Ready or Restoring lists
 		found = false
@@ -392,14 +447,12 @@ func makeIndexStatus(indices []string) (models.IndiceStatus, error) {
 
 func deleteIndices(indices []string) (bool, error) {
 	// Create the IndexStatus data structure
-	log.Println(indices)
 	indiceStatus, err := makeIndexStatus(indices)
 	if err != nil {
 		return false, errors.New(500, fmt.Sprintf("Error comparing online indices with snapshots list: %s", err))
 	}
 
 	var deleting = false
-
 	for _, indice := range indices {
 		queued := stringInList(indiceStatus.Deleting, indice)
 		if stringInList(indiceStatus.Ready, indice) && !queued {
@@ -431,6 +484,9 @@ func parseTimeRange(startInput int64, endInput int64) (time.Time, time.Time, err
 	utc, _ := time.LoadLocation("UTC")
 	start := time.Unix(startInput, 0)
 	end := time.Unix(endInput, 0)
+	currentTime := time.Now()
+	currentTime = currentTime.In(utc)
+	log.Println(currentTime)
 
 	// Parse the start time
 	if startInput < 0 {
@@ -438,6 +494,9 @@ func parseTimeRange(startInput int64, endInput int64) (time.Time, time.Time, err
 	}
 	start = start.In(utc)
 
+	if start.Unix() > currentTime.Unix() {
+		return start, end, errors.New(400, "Start time greater than current time")
+	}
 	// Parse the end time
 	if endInput < 0 {
 		return start, end, errors.New(400, "End time must be greater than 0")
