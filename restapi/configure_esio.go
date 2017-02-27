@@ -31,7 +31,9 @@ var myFlags = struct {
 	MaxRestore int `long:"max-restore" description:"Maximum number of indices allowed to restore at once, default is 1 [$MAX_RESTORE]"`
 	IndexResolution string `long:"resolution" description:"Resolution of indices being restored (day, month, year) [$INDEX_RESOLUTION]"`
 	RepoPattern string `long:"repo-pattern" description:"Snapshot repo pattern (repo/snap/index), ex: logs-%Y/logs-%Y-%m-%d/logs-v1-%Y-%m-%d, [$REPO_PATTERN]"`
+	MaxPercent string `long:"max-percent" description:"The maximum percent an Elasticsearch cluster can be before it autocleanup occurs"`
 }{}
+
 
 func configureFlags(api *operations.EsioAPI) {
 	// api.CommandLineOptionsGroups = []swag.CommandLineOptionsGroup{ ... }
@@ -86,6 +88,13 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 		}
 	}
 
+	if myFlags.MaxPercent ==  ""{
+		if os.Getenv("MAX_PERCENT") != "" {
+			myFlags.MaxPercent = os.Getenv("MAX_PERCENT")
+		} else {
+			panic("No repo-pattern flag or MAX_PERCENT env provided.")
+		}
+	}
 	api.IndexGetStartEndHandler = index.GetStartEndHandlerFunc(func(params index.GetStartEndParams) middleware.Responder {
  		var msg = ""
 
@@ -217,9 +226,10 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 		var allReady = true
 		var restoreStarted = false
 		spaceLeft, err := GetAllocation()
-	  	if spaceLeft > 50 || err != nil {
+		percent_max, err2 := strconv.Atoi(myFlags.MaxPercent)
+	  	if spaceLeft > percent_max || err != nil || err2 != nil{
 	  		go DeleteOldSnap(indices)
-	  		msg := fmt.Sprintf("Your Cluster is at %s", strconv.Itoa(spaceLeft))
+	  		msg := fmt.Sprintf("Your Cluster is at %s percent and needs to be below %s. Starting automatic index cleanup", strconv.Itoa(spaceLeft), myFlags.MaxPercent)
 	  		return index.NewPostStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 	  	}
 		for _, indice := range indices {
@@ -285,9 +295,15 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 		}
 		// Not allowed to delete restoring indices
 		for _, indice := range indices {
-			if restoreQueue.Contains(indice) {
-				msg = fmt.Sprintf("Index in range is currently being restored and cannot be deleted at this time: %s", indice)
-				return index.NewDeleteStartEndRequestRangeNotSatisfiable().WithPayload(&models.Error{Message: &msg})
+			passed, err := validateSnapshotIndex(indice)
+			if err != nil || passed == false {
+				msg = fmt.Sprintf("Error validating index: %s: %s You cannt delete an index that has no snapshot", indice, err)
+				return index.NewPostStartEndRequestRangeNotSatisfiable().WithPayload(&models.Error{Message: &msg})
+			} else {
+				if restoreQueue.Contains(indice) {
+					msg = fmt.Sprintf("Index in range is currently being restored and cannot be deleted at this time: %s", indice)
+					return index.NewDeleteStartEndRequestRangeNotSatisfiable().WithPayload(&models.Error{Message: &msg})
+				}
 			}
 		}
 
