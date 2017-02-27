@@ -15,8 +15,8 @@ import (
 	strfmt "github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
 
-	"github.com/danisla/esio/restapi/operations/health"
-	"github.com/danisla/esio/restapi/operations/index"
+	"github.com/connorwashere/esio/restapi/operations/health"
+	"github.com/connorwashere/esio/restapi/operations/index"
 )
 
 // NewEsioAPI creates a new Esio instance

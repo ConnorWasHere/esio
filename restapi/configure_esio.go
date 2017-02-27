@@ -15,10 +15,10 @@ import (
 
 	elastic "gopkg.in/olivere/elastic.v2"
 
-	"github.com/danisla/esio/models"
-	"github.com/danisla/esio/restapi/operations"
-	"github.com/danisla/esio/restapi/operations/health"
-	"github.com/danisla/esio/restapi/operations/index"
+	"github.com/connorwashere/esio/models"
+	"github.com/connorwashere/esio/restapi/operations"
+	"github.com/connorwashere/esio/restapi/operations/health"
+	"github.com/connorwashere/esio/restapi/operations/index"
 
 )
 

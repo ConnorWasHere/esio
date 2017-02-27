@@ -4,8 +4,8 @@ APP_TITLE := Elasticsearch Snapshot Index Orchestrator
 APP_DESC := Orchestrates the recovery and cleanup of Elasticsearch index snapshots.
 APP_VER := 1.0.0
 APP_SCHEME := http
-APP_CONSUMES := application/com.github.danisla.esio.v1+json
-APP_PRODUCES := application/com.github.danisla.esio.v1+json
+APP_CONSUMES := application/com.github.connorwashere.esio.v1+json
+APP_PRODUCES := application/com.github.connorwashere.esio.v1+json
 APP_MODEL := Esio
 APP_HOST := 127.0.0.1
 APP_PORT := 8000
@@ -17,10 +17,10 @@ JSON_SPEC := $(subst .yml,.json,$(SPEC))
 
 ES_HOST ?= http://localhost:9200
 INDEX_RESOLUTION ?= day
-REPO_PATTERN ?= test/test-%Y_%m/test-v1-%j
+REPO_PATTERN ?= test-v1/test-v1-%Y_%j/test-v1-%Y_%j
 
 DOCKERFILE ?= build/Dockerfile
-DOCKER_REPO ?= danisla/esio
+DOCKER_REPO ?= connorwashere/esio
 DOCKER_TAG ?= v0.0.2
 
 PID := .server.PID

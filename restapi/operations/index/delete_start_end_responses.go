@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-openapi/runtime"
 
-	"github.com/danisla/esio/models"
+	"github.com/connorwashere/esio/models"
 )
 
 /*DeleteStartEndOK All indices in [start,end] range are no longer online.

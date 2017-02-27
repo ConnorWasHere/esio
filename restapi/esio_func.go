@@ -14,7 +14,7 @@ import (
 	errors "github.com/go-openapi/errors"
 	strftime "github.com/hhkbp2/go-strftime"
 	elastic "gopkg.in/olivere/elastic.v2"
-	"github.com/danisla/esio/models"
+	"github.com/connorwashere/esio/models"
 )
 
 type EsAcknowledgedResponse struct {
