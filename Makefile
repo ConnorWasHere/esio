@@ -17,7 +17,8 @@ JSON_SPEC := $(subst .yml,.json,$(SPEC))
 
 ES_HOST ?= http://localhost:9200
 INDEX_RESOLUTION ?= day
-REPO_PATTERN ?= test-v1/test-v1-%Y_%j/test-v1-%Y_%j
+REPO_PATTERN ?= test-v1-%Y/test-v1-%Y_%m/test-v1-%Y_%j
+MAX_PERCENT ?= 70
 
 DOCKERFILE ?= build/Dockerfile
 DOCKER_REPO ?= connorwashere/esio
@@ -31,7 +32,8 @@ run: compile
 	$(APP_CMD) --host $(APP_HOST) --port $(APP_PORT) \
 		--es-host $(ES_HOST) \
 		--resolution $(INDEX_RESOLUTION) \
-		--repo-pattern $(REPO_PATTERN)
+		--repo-pattern $(REPO_PATTERN) \
+		--max-percent $(MAX_PERCENT)
 
 compile: validate
 	@if [[ "$${GOGET:-true}" == "true" ]]; then echo "go get ./..." ; go get ./...; else echo "Skipping go get"; fi

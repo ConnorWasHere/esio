@@ -123,22 +123,22 @@ func configureAPI(api *operations.EsioAPI) http.Handler {
 			return index.NewGetStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 		}
 
+		// Create the IndexStatus data structure
+		indiceStatus, err := makeIndexStatus(indices)
+		if err != nil {
+			msg = fmt.Sprintf("Error comparing online indices with snapshots list: %s", err)
+			return index.NewGetStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
+		}
+		log.Println(indiceStatus.Ready)
 		// Iterate through list and validate each index.
 		var allPass = true
-		for _, i := range indices {
+		for _, i := range indiceStatus.Pending {
 			passed, err := validateSnapshotIndex(i)
 			if err != nil {
 				msg = fmt.Sprintf("Error validating index: %s: %s", i, err)
 				return index.NewGetStartEndRequestRangeNotSatisfiable().WithPayload(&models.Error{Message: &msg})
 			}
 			allPass = allPass && passed
-		}
-
-		// Create the IndexStatus data structure
-		indiceStatus, err := makeIndexStatus(indices)
-		if err != nil {
-			msg = fmt.Sprintf("Error comparing online indices with snapshots list: %s", err)
-			return index.NewGetStartEndBadRequest().WithPayload(&models.Error{Message: &msg})
 		}
 
 		// See if all requested indices are Ready

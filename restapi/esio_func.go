@@ -167,7 +167,6 @@ func makeIndexListFromRange(start time.Time, end time.Time, indexResolution stri
 	// Add next interval to list until time exceedes end time.
 
 	var t = start
-
 	for t.Before(end) {
 		a = append(a, strftime.Format(repoPattern, t))
 		switch indexResolution {
@@ -383,7 +382,6 @@ func GetAllocation() (int, error) {
 // Populates the []Ready, []Pending and []Restoring arrays of the IndiceStatus struct.
 func makeIndexStatus(indices []string) (models.IndiceStatus, error) {
 	var status = &models.IndiceStatus{Pending: make([]string, 0), Ready: make([]string, 0), Restoring: make([]string, 0), Deleting: make([]string, 0)}
-
 	onlineIndices, err := getIndices()
 	if err != nil {
 		return *status, errors.New(500, fmt.Sprintf("Could not GET _cat/indices from Elasticsearch: %s", err))
@@ -391,32 +389,39 @@ func makeIndexStatus(indices []string) (models.IndiceStatus, error) {
 
 	var found = false
 	// Find all indices that are ready (open and green or yellow) or restoring (open and red)
-	for _, onlineIndice := range onlineIndices {
+	for k := 0; k < len(onlineIndices); k++ {
 
 		found = false
 		var match = ""
 
 		// Match online index to availalbe indice in snapshot repo.
 		for _, i := range indices {
-			if path.Base(i) == onlineIndice.Index {
-				match = i
-				found = true
+			var patterns = strings.Split(i ,"/")
+			for _, j := range patterns {
+				if j == onlineIndices[k].Index && !stringInList(status.Ready, i) {
+					match = i
+					found = true
+					break
+				}
+			}
+			if found == true {
 				break
 			}
 		}
 
 		if found {
-			if onlineIndice.Status != "open" {
+			if onlineIndices[k].Status != "open" {
 				return *status, errors.New(500, fmt.Sprintf("Found existing indice on cluster that was not 'open': %s", match))
 			}
 
-			if onlineIndice.Health == "green" || onlineIndice.Health == "yellow" {
+			if onlineIndices[k].Health == "green" || onlineIndices[k].Health == "yellow" {
 				status.Ready = append(status.Ready, match)
-			} else if onlineIndice.Health == "red" {
+			} else if onlineIndices[k].Health == "red" {
 				status.Restoring = append(status.Restoring, match)
 			} else {
-				return *status, errors.New(500, fmt.Sprintf("Found online index: '%s' with invalid Health state '%s'", match, onlineIndice.Health))
+				return *status, errors.New(500, fmt.Sprintf("Found online index: '%s' with invalid Health state '%s'", match, onlineIndices[k].Health))
 			}
+			k = k - 1
 		}
 	}
 

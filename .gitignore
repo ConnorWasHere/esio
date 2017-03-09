@@ -3,3 +3,7 @@
 .server.PID
 NOTES.md
 build
+install.txt
+test.py
+elasticDump
+Dockerfile
